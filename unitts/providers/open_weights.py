@@ -291,6 +291,7 @@ class Qwen3TTSProvider(HttpProvider):
         if self._model is None:
             self._model = self._load_model()
         audio = self._call_inference(request)
+        audio = _extract_audio_result(audio)
         if isinstance(audio, tuple):
             audio, sample_rate = audio[:2]
         else:
@@ -325,12 +326,19 @@ class Qwen3TTSProvider(HttpProvider):
         kwargs: dict[str, Any] = {
             "text": text,
             "input_text": text,
+            "target_text": text,
+            "gen_text": text,
+            "speech_text": text,
             "prompt": text,
             "voice": request.voice,
             "speaker": request.voice,
+            "speaker_id": request.speaker_id or request.voice,
             "voice_description": request.voice_description,
+            "description": request.voice_description or _voice_description_from_request(request),
             "reference_audio": [str(path) for path in request.reference_audio],
             "prompt_audio": str(request.reference_audio[0]) if request.reference_audio else None,
+            "audio_prompt": str(request.reference_audio[0]) if request.reference_audio else None,
+            "reference_audio_path": str(request.reference_audio[0]) if request.reference_audio else None,
             "reference_text": request.reference_text,
             "prompt_text": request.reference_text,
             "language": request.language,
@@ -339,7 +347,24 @@ class Qwen3TTSProvider(HttpProvider):
             "seed": request.seed,
             "stream": request.stream,
         }
-        for method_name in ("generate", "generate_speech", "synthesize", "tts", "infer", "inference", "__call__"):
+        preferred_methods = []
+        if request.reference_audio:
+            preferred_methods.append("generate_voice_clone")
+        if request.voice_description or request.gender or request.age or request.emotion or request.speaking_style:
+            preferred_methods.append("generate_voice_design")
+        preferred_methods.append("generate_custom_voice")
+        method_names = (
+            *preferred_methods,
+            "generate",
+            "generate_speech",
+            "synthesize",
+            "tts",
+            "infer",
+            "inference",
+            "__call__",
+        )
+        last_error: TypeError | None = None
+        for method_name in dict.fromkeys(method_names):
             method = getattr(self._model, method_name, None)
             if method is None:
                 continue
@@ -358,7 +383,7 @@ class Qwen3TTSProvider(HttpProvider):
         ]
         raise RuntimeError(
             "Configured Qwen3-TTS model object does not expose a supported inference method. "
-            "Tried generate/generate_speech/synthesize/tts/infer/inference. "
+            "Tried generate_voice_clone/generate_voice_design/generate_custom_voice/generate/generate_speech/synthesize/tts/infer/inference. "
             f"Available public methods include: {public_methods[:40]}"
         )
 
@@ -387,6 +412,33 @@ def _write_float_wav(audio: Any, sample_rate: int, metadata: dict[str, Any], war
     finally:
         output.unlink(missing_ok=True)
     return TTSResponse(audio=data, sample_rate=sample_rate, metadata=metadata, warnings=warnings)
+
+
+def _voice_description_from_request(request: TTSRequest) -> str | None:
+    parts = [
+        str(value.value if hasattr(value, "value") else value)
+        for value in (request.gender, request.age, request.emotion, request.speaking_style)
+        if value
+    ]
+    return ", ".join(parts) if parts else None
+
+
+def _extract_audio_result(result: Any) -> Any:
+    if isinstance(result, dict):
+        for key in (
+            "audio",
+            "audio_array",
+            "waveform",
+            "wav",
+            "speech",
+            "tts_speech",
+            "samples",
+        ):
+            if key in result:
+                audio = result[key]
+                sample_rate = result.get("sample_rate") or result.get("sampling_rate")
+                return (audio, sample_rate) if sample_rate else audio
+    return result
 
 
 def _accepted_kwargs(method: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
