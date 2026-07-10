@@ -88,16 +88,18 @@ unitts synthesize "Hello from UniTTS" --provider piper -o hello.wav
 | Kokoro | CPU/open-weight | No | No | No | Integration wrapper |
 | F5-TTS | GPU/open-weight | Yes | No | No | Integration wrapper |
 | Dia | GPU/open-weight | Dialogue prompts | Non-verbal tags | No | Integration wrapper |
+| Qwen3-TTS | GPU/open-weight | Yes | Description control | Yes | Configurable integration wrapper |
+| CosyVoice | GPU/open-weight | Yes | Style/emotion | Yes | FunAudioLLM integration wrapper |
+| XTTS v2 | GPU/open-weight | Yes | No | No | Coqui TTS integration wrapper |
 | OpenAI | API | No | No | Yes | Implemented through official SDK |
 | ElevenLabs | API | Yes | Voice settings | Yes | REST integration |
 | Fish Audio | API | Yes | No | Yes | REST integration |
 | Smallest AI | API | No | No | Yes | REST integration |
 | Azure | API | No | SSML styles | No | REST/SSML integration |
 
-Older GPU defaults from the original idea, including XTTS v2, Parler large, and
-StyleTTS 2, are not registered as built-ins. They can be added with
-`ProviderRegistry.register(...)`, but the default package focuses on currently useful
-open-weight routes.
+Parler large and StyleTTS 2 are not registered as built-ins. XTTS v2 was added as
+an optional provider because it remains useful for voice cloning workflows, but it
+is loaded lazily through the Coqui TTS package.
 
 ## Configuration
 

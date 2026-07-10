@@ -31,8 +31,14 @@ class BaseProvider(ABC):
         responses: list[TTSResponse] = []
         warnings: list[str] = []
         for turn in request.turns:
-            voice = request.speaker_map.get(turn.speaker, turn.speaker)
-            response = self.synthesize(TTSRequest(text=turn.text, voice=voice, emotion=turn.emotion))
+            speaker_config = request.speaker_map.get(turn.speaker, turn.voice or turn.speaker)
+            if isinstance(speaker_config, dict):
+                config = dict(speaker_config)
+                voice = config.pop("voice", turn.voice or turn.speaker)
+                turn_request = TTSRequest(text=turn.text, voice=voice, emotion=turn.emotion, **config)
+            else:
+                turn_request = TTSRequest(text=turn.text, voice=speaker_config, emotion=turn.emotion)
+            response = self.synthesize(turn_request)
             warnings.extend(response.warnings)
             responses.append(response)
         return merge_wav_responses(responses, pause_seconds=request.pause_between_turns, warnings=warnings)
@@ -44,4 +50,3 @@ class BaseProvider(ABC):
 
     def cleanup(self) -> None:
         """Release provider resources."""
-

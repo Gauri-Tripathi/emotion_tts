@@ -1,7 +1,7 @@
 .env
 __pycache__/
 
-
+README.md
 .env.template
 *.egg-info/
 .pytest_cache/
@@ -9,5 +9,6 @@ dist/
 build/
 output.*
 
+try.py
 
 docs/

@@ -1,6 +1,15 @@
 """Public package interface for UniTTS."""
 
 from unitts.core.engine import UniTTS
-from unitts.core.schemas import DialogueRequest, DialogueTurn, TTSRequest, TTSResponse
+from unitts.core.schemas import AudioFormat, DialogueRequest, DialogueTurn, ProviderCapabilities, TTSRequest, TTSResponse, VoiceInfo
 
-__all__ = ["DialogueRequest", "DialogueTurn", "TTSRequest", "TTSResponse", "UniTTS"]
+__all__ = [
+    "AudioFormat",
+    "DialogueRequest",
+    "DialogueTurn",
+    "ProviderCapabilities",
+    "TTSRequest",
+    "TTSResponse",
+    "UniTTS",
+    "VoiceInfo",
+]
