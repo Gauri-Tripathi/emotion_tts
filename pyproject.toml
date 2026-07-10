@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unitts"
+version = "0.1.0"
+description = "Unified Text-to-Speech API across local, API, CPU, and GPU providers."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "UniTTS contributors"}]
+dependencies = [
+  "click>=8.1",
+  "pydantic>=2.6",
+  "PyYAML>=6.0",
+  "requests>=2.31",
+]
+
+[project.optional-dependencies]
+cpu = [
+  "numpy>=1.24",
+  "soundfile>=0.12",
+  "piper-tts>=1.2",
+]
+gpu = [
+  "huggingface-hub>=0.23",
+  "torch>=2.2",
+]
+api = [
+  "openai>=1.30",
+]
+audio = [
+  "numpy>=1.24",
+  "soundfile>=0.12",
+  "librosa>=0.10",
+]
+dev = [
+  "pytest>=8.0",
+  "responses>=0.25",
+]
+all = [
+  "numpy>=1.24",
+  "soundfile>=0.12",
+  "piper-tts>=1.2",
+  "huggingface-hub>=0.23",
+  "torch>=2.2",
+  "openai>=1.30",
+  "librosa>=0.10",
+]
+
+[project.scripts]
+unitts = "unitts.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["unitts*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+  "integration: tests that require real services, models, or external binaries",
+]
