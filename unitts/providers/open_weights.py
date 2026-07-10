@@ -290,20 +290,7 @@ class Qwen3TTSProvider(HttpProvider):
         warnings = self._warnings_for(request)
         if self._model is None:
             self._model = self._load_model()
-        if not hasattr(self._model, "generate"):
-            raise RuntimeError("Configured Qwen3-TTS model object must expose generate(...)")
-        audio = self._model.generate(
-            text=request.text or request.ssml or request.phonemes or "",
-            voice=request.voice,
-            voice_description=request.voice_description,
-            reference_audio=[str(path) for path in request.reference_audio],
-            reference_text=request.reference_text,
-            language=request.language,
-            temperature=request.temperature,
-            top_p=request.top_p,
-            seed=request.seed,
-            stream=request.stream,
-        )
+        audio = self._call_inference(request)
         if isinstance(audio, tuple):
             audio, sample_rate = audio[:2]
         else:
@@ -333,6 +320,48 @@ class Qwen3TTSProvider(HttpProvider):
             model = model.to(self.device)
         return model
 
+    def _call_inference(self, request: TTSRequest) -> Any:
+        text = request.text or request.ssml or request.phonemes or ""
+        kwargs: dict[str, Any] = {
+            "text": text,
+            "input_text": text,
+            "prompt": text,
+            "voice": request.voice,
+            "speaker": request.voice,
+            "voice_description": request.voice_description,
+            "reference_audio": [str(path) for path in request.reference_audio],
+            "prompt_audio": str(request.reference_audio[0]) if request.reference_audio else None,
+            "reference_text": request.reference_text,
+            "prompt_text": request.reference_text,
+            "language": request.language,
+            "temperature": request.temperature,
+            "top_p": request.top_p,
+            "seed": request.seed,
+            "stream": request.stream,
+        }
+        for method_name in ("generate", "generate_speech", "synthesize", "tts", "infer", "inference", "__call__"):
+            method = getattr(self._model, method_name, None)
+            if method is None:
+                continue
+            try:
+                return method(**_accepted_kwargs(method, kwargs))
+            except TypeError as exc:
+                try:
+                    return method(text)
+                except TypeError:
+                    last_error = exc
+                    continue
+        public_methods = [
+            name
+            for name in dir(self._model)
+            if not name.startswith("_") and callable(getattr(self._model, name, None))
+        ]
+        raise RuntimeError(
+            "Configured Qwen3-TTS model object does not expose a supported inference method. "
+            "Tried generate/generate_speech/synthesize/tts/infer/inference. "
+            f"Available public methods include: {public_methods[:40]}"
+        )
+
     def cleanup(self) -> None:
         self._model = None
         cleanup_torch()
@@ -358,3 +387,17 @@ def _write_float_wav(audio: Any, sample_rate: int, metadata: dict[str, Any], war
     finally:
         output.unlink(missing_ok=True)
     return TTSResponse(audio=data, sample_rate=sample_rate, metadata=metadata, warnings=warnings)
+
+
+def _accepted_kwargs(method: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
+    import inspect
+
+    signature = inspect.signature(method)
+    parameters = signature.parameters
+    if any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()):
+        return {key: value for key, value in kwargs.items() if value is not None}
+    return {
+        key: value
+        for key, value in kwargs.items()
+        if value is not None and key in parameters
+    }
