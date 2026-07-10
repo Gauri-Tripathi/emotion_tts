@@ -1,0 +1,6 @@
+.env 
+__pycache__/
+*.md
+encodec_n.pdf
+
+.env.template
