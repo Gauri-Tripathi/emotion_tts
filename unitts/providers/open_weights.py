@@ -323,8 +323,15 @@ class Qwen3TTSProvider(HttpProvider):
             ) from exc
         model_cls = getattr(module, class_name)
         if hasattr(model_cls, "from_pretrained"):
-            return model_cls.from_pretrained(self.options.get("model", "Qwen/Qwen3-TTS"), device=self.device)
-        return model_cls(model=self.options.get("model", "Qwen/Qwen3-TTS"), device=self.device)
+            model = model_cls.from_pretrained(self.options.get("model", "Qwen/Qwen3-TTS"))
+        else:
+            try:
+                model = model_cls(model=self.options.get("model", "Qwen/Qwen3-TTS"), device=self.device)
+            except TypeError:
+                model = model_cls(model=self.options.get("model", "Qwen/Qwen3-TTS"))
+        if self.device != "cpu" and hasattr(model, "to"):
+            model = model.to(self.device)
+        return model
 
     def cleanup(self) -> None:
         self._model = None
