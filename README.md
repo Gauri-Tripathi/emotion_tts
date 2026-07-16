@@ -39,6 +39,11 @@ python -m pip install -e ".[gpu]"
 python -m pip install -e ".[all]"
 ```
 
+`.[gpu]` installs only UniTTS's shared GPU and audio dependencies. Install each
+model provider separately; do not assume it includes every model package. The
+[GPU provider guide](docs/gpu-providers.md) gives isolated, provider-specific
+installation commands and Python examples.
+
 When published to PyPI, the equivalent commands will be:
 
 ```bash
@@ -128,6 +133,7 @@ UNITTS_AZURE_REGION=eastus
 ## Documentation
 
 - [Installation](docs/installation.md)
+- [GPU Providers](docs/gpu-providers.md)
 - [Python API](docs/python-api.md)
 - [CLI](docs/cli.md)
 - [Providers](docs/providers.md)

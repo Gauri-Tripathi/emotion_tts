@@ -12,3 +12,5 @@ output.*
 try.py
 
 docs/
+!docs/
+!docs/gpu-providers.md

@@ -89,7 +89,10 @@ class F5TTSProvider(HttpProvider):
         try:
             from f5_tts.api import F5TTS
         except Exception as exc:
-            raise ImportError("Install F5-TTS and unitts[gpu] to use the F5-TTS provider") from exc
+            raise ImportError(
+                "F5-TTS is not installed. Install it in this environment with "
+                "'python -m pip install f5-tts'. See docs/gpu-providers.md."
+            ) from exc
         if self._infer is None:
             self._infer = F5TTS(model=self.options.get("model", "F5TTS_v1_Base"), device=self.device)
         wav, sample_rate, _spect = self._infer.infer(
@@ -132,7 +135,10 @@ class DiaProvider(HttpProvider):
         try:
             from dia.model import Dia
         except Exception as exc:
-            raise ImportError("Install the Dia package and unitts[gpu] to use the Dia provider") from exc
+            raise ImportError(
+                "Dia is not installed. Install it from its source repository in a separate "
+                "environment; see docs/gpu-providers.md."
+            ) from exc
         if self._model is None:
             self._model = Dia.from_pretrained(self.options.get("model", "nari-labs/Dia-1.6B"), device=self.device)
         audio = self._model.generate(
@@ -175,8 +181,37 @@ class XTTSV2Provider(HttpProvider):
             warnings.append("XTTS v2 voice cloning expects reference_audio; using provider default speaker if configured")
         try:
             from TTS.api import TTS
+        except ModuleNotFoundError as exc:
+            if exc.name == "torchaudio":
+                raise ImportError(
+                    "XTTS v2 requires torchaudio matching the installed torch build. "
+                    "See docs/gpu-providers.md for the CUDA 12.4 environment setup."
+                ) from exc
+            raise ImportError(
+                "Coqui TTS is not installed. Install it with "
+                "'python -m pip install coqui-tts'. See docs/gpu-providers.md."
+            ) from exc
+        except ImportError as exc:
+            if "DTensor" in str(exc) and "torch.distributed.tensor" in str(exc):
+                raise ImportError(
+                    "XTTS v2 has incompatible torch and transformers versions. Reinstall "
+                    "the matching CUDA 12.4 torch==2.6.0 and torchaudio==2.6.0 pair from "
+                    "docs/gpu-providers.md."
+                ) from exc
+            if "isin_mps_friendly" in str(exc) and "transformers.pytorch_utils" in str(exc):
+                raise ImportError(
+                    "XTTS v2 is incompatible with Transformers 5.1+. Install "
+                    "transformers==4.57.6; see docs/gpu-providers.md."
+                ) from exc
+            raise ImportError(
+                "Coqui TTS could not be imported. Check its Torch and Transformers "
+                "dependencies in docs/gpu-providers.md."
+            ) from exc
         except Exception as exc:
-            raise ImportError("Install the Coqui TTS package to use XTTS v2: python -m pip install TTS") from exc
+            raise ImportError(
+                "Coqui TTS could not be imported. Check its Torch and Transformers "
+                "dependencies in docs/gpu-providers.md."
+            ) from exc
         if self._model is None:
             model_name = self.options.get("model", "tts_models/multilingual/multi-dataset/xtts_v2")
             self._model = TTS(model_name=model_name).to(self.device)
@@ -234,7 +269,10 @@ class CosyVoiceProvider(HttpProvider):
         try:
             from cosyvoice.cli.cosyvoice import CosyVoice, CosyVoice2
         except Exception as exc:
-            raise ImportError("Install FunAudioLLM CosyVoice to use this provider") from exc
+            raise ImportError(
+                "CosyVoice is not installed. Clone and install the FunAudioLLM CosyVoice "
+                "repository in a separate environment; see docs/gpu-providers.md."
+            ) from exc
         if self._model is None:
             model_path = self.options.get("model", "pretrained_models/CosyVoice2-0.5B")
             model_cls = CosyVoice2 if "2" in str(model_path).lower() else CosyVoice
@@ -264,8 +302,13 @@ class CosyVoiceProvider(HttpProvider):
 class Qwen3TTSProvider(HttpProvider):
     """Qwen3-TTS provider.
 
-    Qwen3-TTS is new and package APIs may vary. This provider supports a callable
-    object with a ``generate`` method loaded from a configured Python package path.
+    Uses the ``qwen_tts`` package (``pip install -U qwen-tts``) which exposes
+    ``Qwen3TTSModel`` with three inference methods:
+      * ``generate_voice_clone``  – reference-audio cloning
+      * ``generate_voice_design`` – description-driven voice
+      * ``generate_custom_voice`` – named speaker voice
+
+    All three return ``(List[np.ndarray], sample_rate)``.
     """
 
     name = "qwen3-tts"
@@ -279,8 +322,21 @@ class Qwen3TTSProvider(HttpProvider):
         generation_controls=True,
         requires_gpu=True,
         min_gpu_vram_gb=8.0,
-        notes="Qwen3-TTS supports short-reference cloning and description control; configure loader when package API changes.",
+        notes="Supported features depend on the selected Qwen3-TTS model variant.",
     )
+
+    # Correct defaults for the qwen-tts PyPI package.
+    _DEFAULT_MODULE = "qwen_tts"
+    _DEFAULT_CLASS = "Qwen3TTSModel"
+    _DEFAULT_MODEL = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
+    _DEFAULT_SPEAKER = "ryan"
+
+    # The qwen_tts API requires FULL language names, not ISO codes.
+    _LANG_MAP: dict[str, str] = {
+        "en": "english", "zh": "chinese", "de": "german", "fr": "french",
+        "es": "spanish", "it": "italian", "pt": "portuguese", "ja": "japanese",
+        "ko": "korean", "ar": "arabic", "ru": "russian",
+    }
 
     def __init__(self, *, device: str = "auto", **kwargs: Any) -> None:
         super().__init__(device=device, **kwargs)
@@ -290,101 +346,96 @@ class Qwen3TTSProvider(HttpProvider):
         warnings = self._warnings_for(request)
         if self._model is None:
             self._model = self._load_model()
-        audio = self._call_inference(request)
-        audio = _extract_audio_result(audio)
-        if isinstance(audio, tuple):
-            audio, sample_rate = audio[:2]
-        else:
-            sample_rate = request.sample_rate or 24000
+        result = self._call_inference(request)
+        # The qwen_tts API returns (List[np.ndarray], sample_rate).
+        audio_arrays, sample_rate = _unpack_qwen_result(result, request.sample_rate or 24000)
+        import numpy as np
+
+        audio = np.concatenate(audio_arrays) if len(audio_arrays) > 1 else audio_arrays[0]
         return _write_float_wav(audio, int(sample_rate), {"provider": self.name, "voice": request.voice}, warnings)
 
     def _load_model(self) -> Any:
         import importlib
 
-        module_name = self.options.get("module", "qwen3_tts")
-        class_name = self.options.get("class_name", "Qwen3TTS")
+        module_name = self.options.get("module", self._DEFAULT_MODULE)
+        class_name = self.options.get("class_name", self._DEFAULT_CLASS)
         try:
             module = importlib.import_module(module_name)
         except Exception as exc:
             raise ImportError(
-                "Install the Qwen3-TTS package or pass module/class_name options for the installed implementation"
+                f"Cannot import '{module_name}'. Install via: pip install -U qwen-tts"
             ) from exc
-        model_cls = getattr(module, class_name)
+        model_cls = getattr(module, class_name, None)
+        if model_cls is None:
+            raise ImportError(
+                f"Module '{module_name}' has no attribute '{class_name}'. "
+                f"Available: {[a for a in dir(module) if not a.startswith('_')]}"
+            )
+        model_id = self.options.get("model", self._DEFAULT_MODEL)
         if hasattr(model_cls, "from_pretrained"):
-            model = model_cls.from_pretrained(self.options.get("model", "Qwen/Qwen3-TTS"))
+            model = model_cls.from_pretrained(model_id)
         else:
             try:
-                model = model_cls(model=self.options.get("model", "Qwen/Qwen3-TTS"), device=self.device)
+                model = model_cls(model=model_id, device=self.device)
             except TypeError:
-                model = model_cls(model=self.options.get("model", "Qwen/Qwen3-TTS"))
+                model = model_cls(model=model_id)
         if self.device != "cpu" and hasattr(model, "to"):
             model = model.to(self.device)
         return model
 
+    def _resolve_language(self, lang: str | None) -> str:
+        """Map ISO language codes to the full names the qwen_tts API expects."""
+        code = (lang or "en").lower().split("-")[0]  # e.g. "en-US" → "en"
+        return self._LANG_MAP.get(code, code)  # pass through if already full
+
     def _call_inference(self, request: TTSRequest) -> Any:
         text = request.text or request.ssml or request.phonemes or ""
-        kwargs: dict[str, Any] = {
-            "text": text,
-            "input_text": text,
-            "target_text": text,
-            "gen_text": text,
-            "speech_text": text,
-            "prompt": text,
-            "voice": request.voice,
-            "speaker": request.voice,
-            "speaker_id": request.speaker_id or request.voice,
-            "voice_description": request.voice_description,
-            "description": request.voice_description or _voice_description_from_request(request),
-            "reference_audio": [str(path) for path in request.reference_audio],
-            "prompt_audio": str(request.reference_audio[0]) if request.reference_audio else None,
-            "audio_prompt": str(request.reference_audio[0]) if request.reference_audio else None,
-            "reference_audio_path": str(request.reference_audio[0]) if request.reference_audio else None,
-            "reference_text": request.reference_text,
-            "prompt_text": request.reference_text,
-            "language": request.language,
-            "temperature": request.temperature,
-            "top_p": request.top_p,
-            "seed": request.seed,
-            "stream": request.stream,
-        }
-        preferred_methods = []
+        language = self._resolve_language(request.language)
+        model_id = str(self.options.get("model", self._DEFAULT_MODEL))
+        is_custom_voice_model = "customvoice" in model_id.lower()
+
+        # --- voice cloning path ---
         if request.reference_audio:
-            preferred_methods.append("generate_voice_clone")
-        if request.voice_description or request.gender or request.age or request.emotion or request.speaking_style:
-            preferred_methods.append("generate_voice_design")
-        preferred_methods.append("generate_custom_voice")
-        method_names = (
-            *preferred_methods,
-            "generate",
-            "generate_speech",
-            "synthesize",
-            "tts",
-            "infer",
-            "inference",
-            "__call__",
-        )
-        last_error: TypeError | None = None
-        for method_name in dict.fromkeys(method_names):
-            method = getattr(self._model, method_name, None)
-            if method is None:
-                continue
+            if is_custom_voice_model:
+                raise ValueError(
+                    f"Qwen model '{model_id}' is a CustomVoice model and does not support "
+                    "voice cloning. Configure a Qwen3-TTS model variant that supports "
+                    "generate_voice_clone."
+                )
+            ref_audio = str(request.reference_audio[0])
+            return self._model.generate_voice_clone(
+                text=text,
+                language=language,
+                ref_audio=ref_audio,
+                ref_text=request.reference_text,
+            )
+
+        # --- voice design path (description-driven) ---
+        instruct = request.voice_description or _voice_description_from_request(request)
+        if instruct:
+            if is_custom_voice_model:
+                raise ValueError(
+                    f"Qwen model '{model_id}' is a CustomVoice model and does not support "
+                    "description-driven voice generation. Configure a Qwen3-TTS VoiceDesign "
+                    "model variant instead."
+                )
             try:
-                return method(**_accepted_kwargs(method, kwargs))
-            except TypeError as exc:
-                try:
-                    return method(text)
-                except TypeError:
-                    last_error = exc
-                    continue
-        public_methods = [
-            name
-            for name in dir(self._model)
-            if not name.startswith("_") and callable(getattr(self._model, name, None))
-        ]
-        raise RuntimeError(
-            "Configured Qwen3-TTS model object does not expose a supported inference method. "
-            "Tried generate_voice_clone/generate_voice_design/generate_custom_voice/generate/generate_speech/synthesize/tts/infer/inference. "
-            f"Available public methods include: {public_methods[:40]}"
+                return self._model.generate_voice_design(
+                    text=text,
+                    instruct=instruct,
+                    language=language,
+                )
+            except ValueError:
+                # CustomVoice model variants don't support voice design;
+                # fall through to custom_voice with a default speaker.
+                pass
+
+        # --- named speaker path ---
+        speaker = request.voice or self.options.get("voice", self._DEFAULT_SPEAKER)
+        return self._model.generate_custom_voice(
+            text=text,
+            speaker=speaker,
+            language=language,
         )
 
     def cleanup(self) -> None:
@@ -424,6 +475,7 @@ def _voice_description_from_request(request: TTSRequest) -> str | None:
 
 
 def _extract_audio_result(result: Any) -> Any:
+    """Normalise provider return values to a usable form."""
     if isinstance(result, dict):
         for key in (
             "audio",
@@ -439,6 +491,20 @@ def _extract_audio_result(result: Any) -> Any:
                 sample_rate = result.get("sample_rate") or result.get("sampling_rate")
                 return (audio, sample_rate) if sample_rate else audio
     return result
+
+
+def _unpack_qwen_result(result: Any, default_sr: int = 24000) -> tuple:
+    """Unpack qwen_tts returns of ``(List[np.ndarray], sample_rate)``."""
+    if isinstance(result, tuple) and len(result) == 2:
+        arrays, sr = result
+        if isinstance(arrays, list):
+            return arrays, int(sr)
+        # Single array + sr
+        return [arrays], int(sr)
+    # Fallback: treat as raw audio
+    if isinstance(result, list):
+        return result, default_sr
+    return [result], default_sr
 
 
 def _accepted_kwargs(method: Any, kwargs: dict[str, Any]) -> dict[str, Any]:

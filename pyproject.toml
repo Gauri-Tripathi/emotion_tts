@@ -25,6 +25,8 @@ cpu = [
 ]
 gpu = [
   "huggingface-hub>=0.23",
+  "numpy>=1.24",
+  "soundfile>=0.12",
   "torch>=2.2",
 ]
 api = [
