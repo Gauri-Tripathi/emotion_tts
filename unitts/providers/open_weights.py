@@ -5,8 +5,12 @@ All heavy model packages are imported lazily inside provider methods.
 
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+
+import requests
 
 from unitts.core.capabilities import CapabilityMatrix, ProviderType
 from unitts.core.device import cleanup_torch
@@ -297,6 +301,68 @@ class CosyVoiceProvider(HttpProvider):
         cleanup_torch()
 
 
+@ProviderRegistry.register("fish-speech")
+@ProviderRegistry.register("fish-speech-local")
+class FishSpeechProvider(HttpProvider):
+    """Self-hosted Fish Speech provider.
+
+    Fish Speech owns the model process and exposes a local HTTP API. Keeping that
+    boundary avoids importing its heavyweight inference stack into UniTTS.
+    """
+
+    name = "fish-speech"
+    capabilities = CapabilityMatrix(
+        provider_type=ProviderType.GPU,
+        languages=["auto"],
+        voice_cloning=True,
+        output_formats=["wav"],
+        generation_controls=True,
+        requires_gpu=True,
+        notes="Connects to a self-hosted Fish Speech API; S2 requires 24 GB VRAM and emotion markers can be included in text.",
+    )
+
+    def synthesize(self, request: TTSRequest) -> TTSResponse:
+        warnings = self._warnings_for(request)
+        endpoint = str(self.options.get("endpoint", "http://127.0.0.1:8080/v1/tts"))
+        payload: dict[str, Any] = {
+            "text": request.text or request.ssml or request.phonemes or "",
+        }
+        if request.reference_text:
+            payload["reference_text"] = request.reference_text
+        if request.reference_audio:
+            try:
+                payload["reference_audio"] = base64.b64encode(request.reference_audio[0].read_bytes()).decode("ascii")
+            except OSError as exc:
+                raise ValueError(f"Could not read Fish Speech reference audio: {request.reference_audio[0]}") from exc
+        parsed_endpoint = urlparse(endpoint)
+        is_loopback = parsed_endpoint.hostname in {"127.0.0.1", "localhost", "::1"}
+        try:
+            with requests.Session() as session:
+                # Cluster proxy variables must not intercept a local Fish Speech server.
+                session.trust_env = not is_loopback
+                response = session.post(endpoint, json=payload, timeout=self.timeout)
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            detail = exc.response.text[:500].strip() if exc.response is not None else ""
+            suffix = f" Response: {detail}" if detail else ""
+            raise RuntimeError(
+                f"Fish Speech server returned HTTP {exc.response.status_code if exc.response is not None else 'error'}."
+                f" Its model backend is not ready or failed to load.{suffix}"
+            ) from exc
+        except requests.RequestException as exc:
+            raise RuntimeError(
+                "Could not reach the Fish Speech server. Start the self-hosted API and "
+                "configure endpoint=.../v1/tts; see docs/gpu-providers.md."
+            ) from exc
+        audio = _fish_speech_audio(response)
+        return TTSResponse(
+            audio=audio,
+            sample_rate=request.sample_rate or 24000,
+            metadata={"provider": self.name, "endpoint": endpoint},
+            warnings=warnings,
+        )
+
+
 @ProviderRegistry.register("qwen3-tts")
 @ProviderRegistry.register("qwen-tts")
 class Qwen3TTSProvider(HttpProvider):
@@ -463,6 +529,30 @@ def _write_float_wav(audio: Any, sample_rate: int, metadata: dict[str, Any], war
     finally:
         output.unlink(missing_ok=True)
     return TTSResponse(audio=data, sample_rate=sample_rate, metadata=metadata, warnings=warnings)
+
+
+def _fish_speech_audio(response: requests.Response) -> bytes:
+    """Accept raw audio and the base64 JSON envelope used by Fish Speech servers."""
+    content_type = response.headers.get("content-type", "").lower()
+    if "json" not in content_type:
+        return response.content
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise RuntimeError("Fish Speech returned invalid JSON instead of audio") from exc
+    candidates: list[Any] = []
+    if isinstance(body, dict):
+        candidates.extend([body.get("audio"), body.get("audio_base64")])
+        data = body.get("data")
+        if isinstance(data, dict):
+            candidates.extend([data.get("audio"), data.get("audio_base64")])
+    for value in candidates:
+        if isinstance(value, str):
+            try:
+                return base64.b64decode(value, validate=True)
+            except ValueError:
+                continue
+    raise RuntimeError("Fish Speech JSON response did not contain base64 audio")
 
 
 def _voice_description_from_request(request: TTSRequest) -> str | None:

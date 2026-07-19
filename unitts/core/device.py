@@ -10,7 +10,20 @@ logger = logging.getLogger(__name__)
 def resolve_device(preference: str = "auto", min_vram_gb: float | None = None) -> str:
     """Resolve a requested device without importing torch unless needed."""
 
-    if preference in {"cpu", "cuda", "mps"}:
+    if preference == "cpu":
+        return preference
+    if preference in {"cuda", "mps"}:
+        try:
+            import torch
+        except Exception as exc:
+            raise RuntimeError(f"{preference} was requested but PyTorch is not available") from exc
+        if preference == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError(
+                "CUDA was requested but is unavailable. Run inside a GPU allocation and install "
+                "a PyTorch CUDA build compatible with the NVIDIA driver."
+            )
+        if preference == "mps" and not (getattr(torch.backends, "mps", None) and torch.backends.mps.is_available()):
+            raise RuntimeError("MPS was requested but is unavailable")
         return preference
     if preference != "auto":
         raise ValueError("device must be one of auto, cpu, cuda, or mps")

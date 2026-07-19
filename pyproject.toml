@@ -53,10 +53,14 @@ all = [
 
 [project.scripts]
 unitts = "unitts.cli:main"
+unitts-web = "unitts.web_server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["unitts*"]
+
+[tool.setuptools.package-data]
+unitts = ["web/*.css", "web/*.html", "web/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

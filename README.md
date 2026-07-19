@@ -84,6 +84,18 @@ unitts providers
 unitts synthesize "Hello from UniTTS" --provider piper -o hello.wav
 ```
 
+## Local Web UI
+
+Start the local interface without loading a model:
+
+```bash
+unitts-web
+```
+
+Open `http://127.0.0.1:8765`. Model work starts only when **Synthesize** is
+pressed. For a remote Slurm node, use your usual SSH port forwarding rather than
+binding the server to a public interface.
+
 ## Providers
 
 | Provider | Type | Cloning | Emotion/style | Streaming | Status |
@@ -95,6 +107,7 @@ unitts synthesize "Hello from UniTTS" --provider piper -o hello.wav
 | Dia | GPU/open-weight | Dialogue prompts | Non-verbal tags | No | Integration wrapper |
 | Qwen3-TTS | GPU/open-weight | Yes | Description control | Yes | Configurable integration wrapper |
 | CosyVoice | GPU/open-weight | Yes | Style/emotion | Yes | FunAudioLLM integration wrapper |
+| Fish Speech | GPU/self-hosted | Yes | Text emotion markers | No | Connects to the local Fish Speech API |
 | XTTS v2 | GPU/open-weight | Yes | No | No | Coqui TTS integration wrapper |
 | OpenAI | API | No | No | Yes | Implemented through official SDK |
 | ElevenLabs | API | Yes | Voice settings | Yes | REST integration |
