@@ -1,0 +1,13 @@
+schema_version: "1"
+engine_id: indextts-2.5
+family: IndexTTS-2.5
+engine_version: 0.0.0
+protocol_versions: ["1.0"]
+status: license_blocked
+entrypoint: null
+upstream_code: exact upstream repository must be verified
+checkpoints: []
+capabilities: {streaming: false, voice_cloning: true, execution_strategy: autoregressive}
+hardware: {accelerator: cuda, min_vram_gb: 0, min_driver: verify, cuda_runtime: verify, compute_capability: verify}
+license: {code: unknown, weights: commercial use requires explicit verification/authorization, commercial_use: restricted}
+limitations: [No implementation; blocked pending weight authorization]

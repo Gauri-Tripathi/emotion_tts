@@ -1,0 +1,17 @@
+schema_version: "1"
+engine_id: qwen3-tts
+family: Qwen3-TTS
+engine_version: 0.1.0
+protocol_versions: ["1.0"]
+status: experimental
+entrypoint: unitts.engines.qwen3_tts:Qwen3TTSEngine
+upstream_code: https://github.com/QwenLM/Qwen3-TTS
+checkpoints: [Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice]
+capabilities:
+  streaming: false
+  voice_cloning: true
+  languages: [en, zh, de, fr, es, it, pt, ja, ko, ar]
+  execution_strategy: autoregressive
+hardware: {accelerator: cuda, min_vram_gb: 8, min_driver: verify, cuda_runtime: verify, compute_capability: verify, peak_load_memory_mb: 8192}
+license: {code: Apache-2.0 (verify upstream version), weights: checkpoint-specific; verify, commercial_use: verify}
+limitations: [Requires isolated qwen-tts and Torch dependencies, Streaming is not validated]

@@ -1,0 +1,13 @@
+schema_version: "1"
+engine_id: fish-s2-pro
+family: Fish Audio S2 Pro
+engine_version: 0.1.0
+protocol_versions: ["1.0"]
+status: experimental
+entrypoint: null
+upstream_code: https://github.com/fishaudio/fish-speech
+checkpoints: [Fish Audio S2 Pro exact identifier must be verified]
+capabilities: {streaming: false, voice_cloning: true, execution_strategy: remote}
+hardware: {accelerator: cuda, min_vram_gb: 24, min_driver: verify, cuda_runtime: verify, compute_capability: verify, peak_load_memory_mb: 24576}
+license: {code: repository-specific; verify, weights: checkpoint-specific; verify, commercial_use: verify}
+limitations: [Existing integration targets a self-hosted HTTP worker, S2 Pro checkpoint has not been exercised]
