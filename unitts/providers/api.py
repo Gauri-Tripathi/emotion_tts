@@ -93,7 +93,7 @@ class ElevenLabsProvider(HttpProvider):
     def list_voices(self) -> list[dict[str, Any]]:
         api_key = self.options.get("api_key")
         if not api_key:
-            return []
+            raise ValueError("ElevenLabs provider requires api_key or UNITTS_ELEVENLABS_API_KEY")
         data = self._get_json("https://api.elevenlabs.io/v1/voices", headers={"xi-api-key": api_key})
         return [{"id": item.get("voice_id"), "name": item.get("name")} for item in data.get("voices", [])]
 
