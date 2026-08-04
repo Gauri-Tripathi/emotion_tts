@@ -25,6 +25,40 @@ SYNTHESIS_LOCK = threading.Lock()
 MAX_BODY_BYTES = 32 * 1024 * 1024
 
 
+class InferenceSession:
+    """Keep one provider warm; serialize access to its mutable model state."""
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._tts: UniTTS | None = None
+        self._key: tuple[str, str, str | None] | None = None
+
+    def synthesize(self, provider: str, device: str, model: str | None, request: TTSRequest):
+        key = (provider, device, model)
+        with self._lock:
+            if self._key != key or self._tts is None:
+                self.close()
+                options = {"model": model} if model else {}
+                self._tts = UniTTS(provider=provider, device=device, **options)
+                self._key = key
+            try:
+                return self._tts.synthesize(request)
+            except Exception:
+                # A failed inference may leave a model unusable. Recreate it next time.
+                self.close()
+                raise
+
+    def close(self) -> None:
+        with self._lock:
+            tts, self._tts = self._tts, None
+            self._key = None
+            if tts is not None:
+                tts.cleanup()
+
+
+INFERENCE_SESSION = InferenceSession()
+
+
 def provider_payloads() -> list[dict[str, Any]]:
     """Return the registry metadata needed by the browser without loading models."""
     providers = []
@@ -68,9 +102,9 @@ def synthesize_payload(payload: dict[str, Any]) -> dict[str, Any]:
             reference_audio=[reference] if reference else [],
             reference_text=payload.get("reference_text") or None,
         )
-        options = {"model": payload["model"]} if payload.get("model") else {}
-        with UniTTS(provider=provider, device=payload.get("device", "auto"), **options) as tts:
-            response = tts.synthesize(request)
+        response = INFERENCE_SESSION.synthesize(
+            provider, payload.get("device", "auto"), payload.get("model") or None, request,
+        )
         return {
             "audio": base64.b64encode(response.audio).decode("ascii"),
             "sample_rate": response.sample_rate,
@@ -153,6 +187,7 @@ def main() -> None:
         pass
     finally:
         server.server_close()
+        INFERENCE_SESSION.close()
 
 
 if __name__ == "__main__":

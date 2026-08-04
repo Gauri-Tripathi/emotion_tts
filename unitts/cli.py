@@ -5,15 +5,30 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+from functools import wraps
 from pathlib import Path
 
 import click
+import requests
 
+from unitts import UniTTS
 from unitts.core.config import init_config
 from unitts.core.registry import ProviderRegistry
 from unitts.core.schemas import OutputFormat, TTSRequest
 from unitts.utils.downloader import hf_download
-from unitts import UniTTS
+
+
+def user_errors(function):
+    """Show actionable failures; --verbose retains the debugging traceback."""
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        try:
+            return function(*args, **kwargs)
+        except (ImportError, ValueError, RuntimeError, OSError, requests.RequestException) as exc:
+            if click.get_current_context().find_root().params.get("verbose"):
+                raise
+            raise click.ClickException(str(exc)) from exc
+    return wrapped
 
 
 @click.group()
@@ -33,8 +48,9 @@ def main(verbose: bool = False) -> None:
 @click.option("--speed", type=float, help="Speech speed multiplier.")
 @click.option("--pitch", type=float, help="Pitch in semitones where supported.")
 @click.option("--volume", type=float, help="Volume multiplier where supported.")
-@click.option("--format", "output_format", type=click.Choice([item.value for item in OutputFormat]), default="wav", show_default=True)
-@click.option("--output", "-o", type=click.Path(dir_okay=False, path_type=Path), default=Path("output.wav"), show_default=True)
+@click.option("--format", "output_format", type=click.Choice([item.value for item in OutputFormat]), help="Audio format; inferred from --output or provider default.")
+@click.option("--output", "-o", type=click.Path(dir_okay=False, path_type=Path), help="Output file (default: output.<format>).")
+@user_errors
 def synthesize(
     text: str | None,
     input_file: Path | None,
@@ -44,8 +60,8 @@ def synthesize(
     speed: float | None,
     pitch: float | None,
     volume: float | None,
-    output_format: str,
-    output: Path,
+    output_format: str | None,
+    output: Path | None,
 ) -> None:
     """Synthesize text to an audio file."""
 
@@ -58,6 +74,14 @@ def synthesize(
     if not body.strip():
         raise click.UsageError("Provide text, --file, or stdin input")
 
+    formats = ProviderRegistry.get(provider).capabilities.output_formats
+    suffix = output.suffix.lstrip(".").lower() if output else ""
+    output_format = output_format or suffix or ("wav" if "wav" in formats else formats[0])
+    if output_format not in formats:
+        raise click.UsageError(f"Provider '{provider}' supports: {', '.join(formats)}. Choose --format and an output filename with that extension.")
+    if suffix and suffix != output_format:
+        raise click.UsageError(f"Output extension '.{suffix}' does not match --format {output_format}.")
+    output = output or Path(f"output.{output_format}")
     request = TTSRequest(
         text=body.strip(),
         voice=voice,
@@ -76,6 +100,7 @@ def synthesize(
 
 @main.command()
 @click.option("--provider", "-p", required=True, help="Provider name.")
+@user_errors
 def voices(provider: str) -> None:
     """List voices for a provider."""
 
@@ -87,13 +112,32 @@ def voices(provider: str) -> None:
 def providers_command() -> None:
     """List registered providers and capabilities."""
 
-    rows = []
+    headers = ("provider", "type", "cloning", "emotion", "streaming", "formats")
+    rows: list[tuple[str, ...]] = []
     for name, provider_cls in sorted(ProviderRegistry.all().items()):
         cap = provider_cls.capabilities
-        rows.append((name, cap.provider_type.value, cap.voice_cloning, cap.emotion, cap.streaming, ",".join(cap.output_formats)))
-    click.echo("name\ttype\tcloning\temotion\tstreaming\tformats")
+        rows.append((
+            name,
+            cap.provider_type.value,
+            "yes" if cap.voice_cloning else "no",
+            "yes" if cap.emotion else "no",
+            "yes" if cap.streaming else "no",
+            ", ".join(cap.output_formats),
+        ))
+
+    widths = [max(len(header), *(len(row[index]) for row in rows)) for index, header in enumerate(headers)]
+    separator = "+" + "+".join("-" * (width + 2) for width in widths) + "+"
+
+    def render(row: tuple[str, ...]) -> str:
+        cells = [f" {value:<{width}} " for value, width in zip(row, widths)]
+        return "|" + "|".join(cells) + "|"
+
+    click.echo(separator)
+    click.echo(render(headers))
+    click.echo(separator)
     for row in rows:
-        click.echo("\t".join(str(item) for item in row))
+        click.echo(render(row))
+    click.echo(separator)
 
 
 @main.group()
