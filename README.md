@@ -1,99 +1,93 @@
 # UniTTS
 
-Turn text into speech through a local model or a hosted API using one Python interface.
+UniTTS provides one Python interface for local and hosted text-to-speech systems.
+It includes a Python SDK, command-line interface, local web UI, and an experimental
+service runtime for isolated speech engines.
 
-**Start here: [Getting started](docs/getting-started.md)** — Windows setup,
-CPU speech, API keys, working commands, and troubleshooting.
+> **Project status:** pre-release. Piper is the recommended local CPU path. Other
+> providers require their own credentials, packages, model weights, and hardware.
 
-For repeated generation, see [Inference performance](docs/inference.md): keep
-models loaded, run the web UI in WSL, and benchmark cold versus warm requests.
+## Highlights
 
-## First local speech (Windows PowerShell)
+- Common request and response models across providers
+- Lazy loading for optional CPU, GPU, and API dependencies
+- Provider capability discovery from the CLI and web UI
+- Reusable model sessions for repeated local inference
+- Isolated engine manifests and lifecycle contracts for service deployments
 
-Requires Python 3.11 or newer. Run these commands from this repository:
+## Quick start
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[cpu]"
-$env:UNITTS_PIPER_MODEL_CACHE = "$PWD/.unitts-cache/piper"
-.\.venv\Scripts\python.exe -m unitts.cli synthesize "Hello from UniTTS" --provider piper -o hello.wav
+UniTTS requires Python 3.11 or newer. From the repository root in WSL or Linux:
+
+```bash
+python3 -m venv .venv-wsl
+source .venv-wsl/bin/activate
+python -m pip install -e ".[cpu]"
+
+export UNITTS_PIPER_MODEL_CACHE="$PWD/.unitts-cache/piper"
+unitts synthesize \
+  "Hello from UniTTS" \
+  --provider piper \
+  --voice en_US-lessac-medium \
+  --output hello.wav
 ```
 
-The first run downloads a voice and needs internet access. Subsequent runs use the
-cached model on your CPU. No GPU or API key is required. Select
-`.venv/Scripts/python.exe` as your IDE interpreter too.
+The first Piper request downloads the selected voice. Later requests reuse the
+cached model and run locally on CPU.
 
-For hosted speech, follow the [API walkthrough](docs/getting-started.md#hosted-speech-with-elevenlabs).
+## Python API
 
-## Where to work in the code
+```python
+from unitts import UniTTS
 
-The CLI and local web UI use this path:
+with UniTTS(
+    provider="piper",
+    device="cpu",
+    model_cache=".unitts-cache/piper",
+) as tts:
+    result = tts.synthesize_to_file(
+        "Hello from UniTTS",
+        "hello.wav",
+        voice="en_US-lessac-medium",
+    )
 
-```text
-text → UniTTS (core/engine.py) → provider (providers/) → audio bytes/file
-              ↑
-       core/config.py: YAML + environment variables + constructor options
+print(result.metadata)
 ```
 
-Start with that path when debugging CPU or API speech. `unitts/core/config.py`
-only loads provider settings; it does not install models or generate speech.
-The separate `runtime/`, `engine_sdk/`, and `services/` directories contain an
-in-progress runtime migration described below. A registered provider or model
-manifest does not establish that its dependencies are installed or that it has
-passed a real model test.
+## Commands
 
-## Advanced runtime migration
+```bash
+# Inspect registered providers and capabilities.
+unitts providers
 
-UniTTS is an extensible generative speech runtime for serving heterogeneous TTS
-architectures through one stable contract. Core owns validation, planning,
-admission, worker lifecycle, device placement, streaming, and observability
-boundaries. Engine plugins own model code, batching, weights, and heavy dependencies.
+# List voices exposed by a provider.
+unitts voices --provider piper
 
-The repository is migrating incrementally from its original provider facade. The
-existing `UniTTS(provider=...)`, CLI, and local web UI remain available. New code
-uses `SynthesisRequest`, `SpeechEngine`, and `UniTTSRuntime`.
+# Start the local UI at http://localhost:8765.
+unitts-web
+```
 
-## Current status
+The web UI retains the selected model between requests, reducing repeated inference
+startup cost. The `unitts-api` command starts the experimental engine runtime; its
+`dummy` engine generates test tones rather than speech.
 
-- `dummy` is ready and provides deterministic generation and ordered streaming.
-- The request → plan → scheduler → worker → engine → result/stream vertical slice works locally.
-- Qwen3-TTS is migrated behind the lifecycle but remains experimental pending an isolated GPU smoke test.
-- Ten requested families have truthful manifests. A manifest is not an implementation.
-
-## Local development
-
-Python 3.11 or newer is required.
+## Development
 
 ```bash
 python -m pip install -e ".[dev,service]"
-python -m pytest
-unitts-api
+python -m pytest -q
 ```
 
-The API listens on `http://127.0.0.1:8000`. Try the dummy engine:
+GPU engines should use separate environments because their PyTorch, CUDA, and model
+package requirements can conflict. Normal tests do not download model weights.
 
-```bash
-curl -X POST http://127.0.0.1:8000/v1/audio/speech \
-  -H "content-type: application/json" \
-  -d '{"model":"dummy","input":"Hello from UniTTS"}' --output hello.wav
-```
+## Project layout
 
-Run one versioned JSON-lines engine worker process:
+- `unitts/core` and `unitts/providers`: synchronous SDK, CLI, and web UI
+- `unitts/contracts` and `unitts/engine_sdk`: engine interfaces and wire models
+- `unitts/runtime` and `unitts/services`: scheduling, workers, streaming, and API
+- `engines`: isolated engine manifests and packaging metadata
 
-```bash
-$env:UNITTS_ENGINE_ID="dummy"
-python -m unitts.services.engine_worker
-```
+## License
 
-For Qwen, create the environment from `engines/qwen3-tts`, install this repository,
-set `UNITTS_ENGINE_ID=qwen3-tts` and `UNITTS_DEVICE=cuda`, then run the same worker.
-Normal CI never downloads model weights.
-
-Production uses one container and OS process per replica, with one model instance
-and CUDA context. Containers share the host NVIDIA driver; verify driver, CUDA,
-compute capability, code license, and weight license for every exact checkpoint.
-F5 and XTTS weights default to research/non-commercial, and IndexTTS commercial
-use requires explicit authorization.
-
-See [architecture](docs/architecture.md), [engine development](docs/engine-development.md),
-and [model support](docs/model-support.md).
+MIT
