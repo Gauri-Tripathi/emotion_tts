@@ -7,8 +7,8 @@ name = "unitts"
 version = "0.1.0"
 description = "Unified Text-to-Speech API across local, API, CPU, and GPU providers."
 readme = "README.md"
-requires-python = ">=3.10"
-license = {text = "MIT"}
+requires-python = ">=3.11"
+license = "MIT"
 authors = [{name = "UniTTS contributors"}]
 dependencies = [
   "click>=8.1",
@@ -21,7 +21,7 @@ dependencies = [
 cpu = [
   "numpy>=1.24",
   "soundfile>=0.12",
-  "piper-tts>=1.2",
+  "piper-tts>=1.3,<2",
 ]
 gpu = [
   "huggingface-hub>=0.23",
@@ -39,12 +39,21 @@ audio = [
 ]
 dev = [
   "pytest>=8.0",
+  "pytest-asyncio>=0.23",
   "responses>=0.25",
+  "ruff>=0.9",
+  "mypy>=1.14",
+  "build>=1.2",
+]
+service = [
+  "fastapi>=0.115",
+  "uvicorn>=0.34",
+  "httpx>=0.28",
 ]
 all = [
   "numpy>=1.24",
   "soundfile>=0.12",
-  "piper-tts>=1.2",
+  "piper-tts>=1.3,<2",
   "huggingface-hub>=0.23",
   "torch>=2.2",
   "openai>=1.30",
@@ -54,6 +63,7 @@ all = [
 [project.scripts]
 unitts = "unitts.cli:main"
 unitts-web = "unitts.web_server:main"
+unitts-api = "unitts.services.api:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -68,3 +78,21 @@ pythonpath = ["."]
 markers = [
   "integration: tests that require real services, models, or external binaries",
 ]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+ignore = ["E501", "UP037"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["unitts/contracts", "unitts/engine_sdk", "unitts/runtime", "unitts/engines", "unitts/services"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["unitts.core.*", "unitts.providers.*"]
+ignore_errors = true

@@ -1,0 +1,13 @@
+schema_version: "1"
+engine_id: xtts-v2
+family: XTTS-v2
+engine_version: 0.1.0
+protocol_versions: ["1.0"]
+status: license_blocked
+entrypoint: null
+upstream_code: https://github.com/idiap/coqui-ai-TTS
+checkpoints: [tts_models/multilingual/multi-dataset/xtts_v2]
+capabilities: {streaming: false, voice_cloning: true, execution_strategy: autoregressive}
+hardware: {accelerator: cuda, min_vram_gb: 4, min_driver: verify, cuda_runtime: verify, compute_capability: verify, peak_load_memory_mb: 4096}
+license: {code: MPL-2.0 (verify maintained fork), weights: research/non-commercial by default, commercial_use: restricted}
+limitations: [Legacy provider wrapper exists; production serving is blocked by weight terms]

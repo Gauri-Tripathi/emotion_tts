@@ -1,16 +1,44 @@
 .env
 __pycache__/
+.venv/
+.venv-*/
+venv/
+*.py[cod]
+.unitts-cache/
 
-README.md
-.env.template
+# Local credentials; keep shareable configuration templates visible.
+.env.*
+!.env.example
+!.env.template
+!.env.sample
+/.aws/
+
+# Build, packaging, test, and analysis output.
 *.egg-info/
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+/htmlcov/
+/coverage.xml
 dist/
 build/
-output.*
+# Root-level generated speech; nested audio fixtures remain trackable.
+/*.wav
+/*.mp3
+/*.flac
+/*.ogg
+/*.opus
 
-try.py
+# Local scratch script; may contain credentials.
+/try.py
 
-docs/
-!docs/
-!docs/gpu-providers.md
+# Operating-system metadata.
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Keep source, documentation, manifests, and lockfiles visible to Git.

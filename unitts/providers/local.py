@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import shutil
 import subprocess
 import tempfile
@@ -38,13 +39,12 @@ class PiperProvider(HttpProvider):
         if request.output_format.value != "wav":
             warnings.append("Piper outputs wav; requested format was ignored")
         try:
-            import numpy as np
             import soundfile as sf
             from piper.config import SynthesisConfig
             from piper.download_voices import download_voice
             from piper.voice import PiperVoice
         except Exception as exc:
-            raise ImportError("Install unitts[cpu] to use Piper") from exc
+            raise ImportError('Piper dependencies are unavailable or incompatible. Run: python -m pip install -e ".[cpu]"') from exc
 
         cache_dir = Path(self.options.get("model_cache", Path.home() / ".unitts" / "models" / "piper"))
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -54,27 +54,29 @@ class PiperProvider(HttpProvider):
         if not model_path.exists() or not config_path.exists():
             download_voice(voice_name, cache_dir)
         if self._voice is None or self._voice_name != voice_name:
-            self._voice = PiperVoice.load(model_path, config_path=config_path, download_dir=cache_dir)
+            self._voice = PiperVoice.load(model_path, config_path=config_path)
             self._voice_name = voice_name
         length_scale = None if request.speed is None else 1.0 / request.speed
-        syn_config = SynthesisConfig(length_scale=length_scale, volume=request.volume or 1.0)
-        chunks = list(self._voice.synthesize(request.text or request.ssml or request.phonemes or "", syn_config=syn_config))
-        audio = np.concatenate([chunk.audio_float_array for chunk in chunks])
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as handle:
-            temp_path = Path(handle.name)
-        try:
-            sf.write(temp_path, audio, self._voice.config.sample_rate)
-            data = temp_path.read_bytes()
-        finally:
-            temp_path.unlink(missing_ok=True)
-        return TTSResponse(audio=data, sample_rate=self._voice.config.sample_rate, metadata={"provider": self.name, "voice": voice_name}, warnings=warnings)
+        syn_config = SynthesisConfig(length_scale=length_scale, volume=1.0 if request.volume is None else request.volume)
+        output = io.BytesIO()
+        frames = 0
+        with sf.SoundFile(output, mode="w", samplerate=self._voice.config.sample_rate,
+                          channels=1, format="WAV", subtype="PCM_16") as writer:
+            for chunk in self._voice.synthesize(request.text or request.ssml or request.phonemes or "", syn_config=syn_config):
+                writer.write(chunk.audio_float_array)
+                frames += len(chunk.audio_float_array)
+        if not frames:
+            raise RuntimeError("Piper produced no audio. Try text containing spoken words.")
+        return TTSResponse(audio=output.getvalue(), sample_rate=self._voice.config.sample_rate,
+                           duration_seconds=frames / self._voice.config.sample_rate,
+                           metadata={"provider": self.name, "voice": voice_name}, warnings=warnings)
 
     def list_voices(self) -> list[dict[str, Any]]:
         try:
-            from piper.download_voices import get_voices
-        except Exception:
-            return []
-        voices = get_voices(self.options.get("download_url"), self.options.get("voices_file"))
+            from piper.download_voices import VOICES_JSON
+        except ImportError as exc:
+            raise ImportError('Install Piper with: python -m pip install -e ".[cpu]"') from exc
+        voices = self._get_json(VOICES_JSON, headers={})
         return [{"id": key, **value} for key, value in voices.items()]
 
     def cleanup(self) -> None:

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
+from unitts.core.capabilities import ProviderType
 from unitts.core.config import provider_options
 from unitts.core.device import resolve_device
 from unitts.core.provider import BaseProvider
@@ -38,7 +40,10 @@ class UniTTS:
         provider_cls = ProviderRegistry.get(provider)
         options = provider_options(provider, kwargs)
         min_vram_gb = options.pop("min_vram_gb", None)
-        device = resolve_device(self.device_preference, min_vram_gb=min_vram_gb)
+        preference = self.device_preference
+        if preference == "auto" and provider_cls.capabilities.provider_type in {ProviderType.API, ProviderType.CPU}:
+            preference = "cpu"
+        device = resolve_device(preference, min_vram_gb=min_vram_gb)
         logger.info("Loading provider %s on %s", provider, device)
         self.provider = provider_cls(device=device, **options)
         self.provider_name = provider
@@ -49,7 +54,13 @@ class UniTTS:
         if self.provider is None:
             raise RuntimeError("No provider loaded")
         request = text if isinstance(text, TTSRequest) else TTSRequest(text=text, **kwargs)
-        return self.provider.synthesize(request)
+        started = perf_counter()
+        response = self.provider.synthesize(request)
+        elapsed = perf_counter() - started
+        response.metadata["synthesis_seconds"] = elapsed
+        if response.duration_seconds > 0:
+            response.metadata["real_time_factor"] = elapsed / response.duration_seconds
+        return response
 
     def synthesize_to_file(self, text: str | TTSRequest, output: str | Path, **kwargs: Any) -> TTSResponse:
         """Synthesize speech and write audio bytes to a file."""

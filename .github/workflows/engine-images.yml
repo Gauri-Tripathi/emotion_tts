@@ -1,0 +1,17 @@
+name: Engine image
+on:
+  workflow_dispatch:
+    inputs:
+      engine:
+        description: Engine directory changed or selected for validation
+        required: true
+        type: choice
+        options: [dummy, omnivoice, dots-tts, qwen3-tts, f5-tts, fish-s2-pro, cosyvoice3, indextts-2.5, vibevoice, xtts-v2, voxcpm2]
+permissions:
+  contents: read
+jobs:
+  selected-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: docker build -f "engines/${{ inputs.engine }}/Dockerfile" .

@@ -8,7 +8,7 @@ from typing import Any
 import requests
 
 from unitts.core.provider import BaseProvider
-from unitts.core.schemas import TTSRequest, TTSResponse
+from unitts.core.schemas import TTSRequest
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,20 @@ class HttpProvider(BaseProvider):
     """Base class for REST-backed providers."""
 
     timeout: float = 120.0
+
+    def _check_response(self, response: requests.Response) -> None:
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            hint = {
+                401: "Check your API key and its provider.",
+                403: "Check your API key permissions and access to this model or voice.",
+                404: "Check the provider's voice ID, model, and endpoint.",
+                429: "Check your quota or billing; retry later if rate limited.",
+            }.get(response.status_code, "Check the provider response below.")
+            raise RuntimeError(
+                f"{self.name} request failed (HTTP {response.status_code}). {hint} {response.text[:500]}"
+            ) from exc
 
     def _warnings_for(self, request: TTSRequest) -> list[str]:
         return [f"{field} is not supported by provider '{self.name}' and was ignored" for field in self.capabilities.unsupported_request_fields(request)]
@@ -30,17 +44,10 @@ class HttpProvider(BaseProvider):
         data: bytes | str | None = None,
     ) -> bytes:
         response = requests.post(url, headers=headers, json=json, data=data, timeout=self.timeout)
-        try:
-            response.raise_for_status()
-        except requests.HTTPError as exc:
-            message = response.text[:500]
-            raise RuntimeError(f"{self.name} request failed: {response.status_code} {message}") from exc
+        self._check_response(response)
         return response.content
 
     def _get_json(self, url: str, *, headers: dict[str, str]) -> Any:
         response = requests.get(url, headers=headers, timeout=self.timeout)
-        try:
-            response.raise_for_status()
-        except requests.HTTPError as exc:
-            raise RuntimeError(f"{self.name} request failed: {response.status_code} {response.text[:500]}") from exc
+        self._check_response(response)
         return response.json()

@@ -1,0 +1,13 @@
+schema_version: "1"
+engine_id: f5-tts
+family: F5-TTS
+engine_version: 0.1.0
+protocol_versions: ["1.0"]
+status: experimental
+entrypoint: null
+upstream_code: https://github.com/SWivid/F5-TTS
+checkpoints: [F5TTS_v1_Base]
+capabilities: {streaming: false, voice_cloning: true, execution_strategy: flow_matching}
+hardware: {accelerator: cuda, min_vram_gb: 8, min_driver: verify, cuda_runtime: verify, compute_capability: verify, peak_load_memory_mb: 8192}
+license: {code: MIT (verify exact revision), weights: research/non-commercial unless exact checkpoint proves otherwise, commercial_use: restricted}
+limitations: [Legacy provider exists but isolated engine lifecycle is not validated]

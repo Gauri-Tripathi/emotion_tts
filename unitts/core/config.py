@@ -49,8 +49,8 @@ def init_config(path: Path | None = None) -> Path:
     target = path or CONFIG_PATH
     target.parent.mkdir(parents=True, exist_ok=True)
     if not target.exists():
-        target.write_text(
-            "defaults:\n  model_cache: ${USERPROFILE}/.unitts/models\nproviders: {}\n",
-            encoding="utf-8",
-        )
+        target.write_text(yaml.safe_dump({
+            "defaults": {"model_cache": (Path.home() / ".unitts" / "models").as_posix()},
+            "providers": {},
+        }), encoding="utf-8")
     return target
