@@ -6,6 +6,7 @@ All heavy model packages are imported lazily inside provider methods.
 from __future__ import annotations
 
 import base64
+import io
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -35,6 +36,7 @@ class KokoroProvider(HttpProvider):
     def __init__(self, *, device: str = "auto", **kwargs: Any) -> None:
         super().__init__(device=device, **kwargs)
         self._pipeline: Any | None = None
+        self._lang_code: str | None = None
 
     def synthesize(self, request: TTSRequest) -> TTSResponse:
         warnings = self._warnings_for(request)
@@ -43,24 +45,35 @@ class KokoroProvider(HttpProvider):
             from kokoro import KPipeline
         except Exception as exc:
             raise ImportError("Install kokoro plus unitts[audio] to use the Kokoro provider") from exc
-        lang_code = self.options.get("lang_code") or (request.language or "en")[:1].lower()
-        if self._pipeline is None:
-            self._pipeline = KPipeline(lang_code=lang_code)
+        language = (request.language or "en").lower().replace("_", "-")
+        language_codes = {"en": "a", "en-us": "a", "en-gb": "b", "ja": "j", "zh": "z", "es": "e", "fr": "f", "hi": "h", "it": "i", "pt": "p"}
+        lang_code = self.options.get("lang_code") or language_codes.get(language, language_codes.get(language.split("-")[0]))
+        if not lang_code:
+            raise ValueError(f"Kokoro does not support language: {language}")
+        if self._pipeline is None or self._lang_code != lang_code:
+            self._pipeline = KPipeline(lang_code=lang_code, device=self.device)
+            self._lang_code = lang_code
         generator = self._pipeline(request.text or request.ssml or request.phonemes or "", voice=request.voice or self.options.get("voice", "af_heart"), speed=request.speed or 1.0)
-        _graphemes, _phonemes, audio = next(generator)
-        import tempfile
-
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as handle:
-            output = Path(handle.name)
-        try:
-            sf.write(output, audio, request.sample_rate or 24000)
-            data = output.read_bytes()
-        finally:
-            output.unlink(missing_ok=True)
-        return TTSResponse(audio=data, sample_rate=request.sample_rate or 24000, metadata={"provider": self.name}, warnings=warnings)
+        output = io.BytesIO()
+        frames = 0
+        with sf.SoundFile(output, mode="w", samplerate=24000, channels=1, format="WAV", subtype="PCM_16") as writer:
+            for _graphemes, _phonemes, audio in generator:
+                if audio is None:
+                    continue
+                if hasattr(audio, "detach"):
+                    audio = audio.detach().cpu().numpy()
+                writer.write(audio)
+                frames += len(audio)
+        if not frames:
+            raise RuntimeError("Kokoro produced no audio. Try text containing spoken words.")
+        if request.sample_rate not in (None, 24000):
+            warnings.append("Kokoro outputs at its native 24000 Hz; sample_rate was ignored.")
+        return TTSResponse(audio=output.getvalue(), sample_rate=24000, duration_seconds=frames / 24000,
+                           metadata={"provider": self.name, "voice": request.voice or self.options.get("voice", "af_heart")}, warnings=warnings)
 
     def cleanup(self) -> None:
         self._pipeline = None
+        self._lang_code = None
         cleanup_torch()
 
 
@@ -144,7 +157,10 @@ class DiaProvider(HttpProvider):
                 "environment; see docs/gpu-providers.md."
             ) from exc
         if self._model is None:
-            self._model = Dia.from_pretrained(self.options.get("model", "nari-labs/Dia-1.6B"), device=self.device)
+            load_options = {"device": self.device}
+            if "dtype" in self.options:
+                load_options["compute_dtype"] = self.options["dtype"]
+            self._model = Dia.from_pretrained(self.options.get("model", "nari-labs/Dia-1.6B"), **load_options)
         audio = self._model.generate(
             request.text or request.ssml or request.phonemes or "",
             temperature=request.temperature or 1.0,
@@ -439,7 +455,22 @@ class Qwen3TTSProvider(HttpProvider):
             )
         model_id = self.options.get("model", self._DEFAULT_MODEL)
         if hasattr(model_cls, "from_pretrained"):
-            model = model_cls.from_pretrained(model_id)
+            load_options: dict[str, Any] = {}
+            if module_name == self._DEFAULT_MODULE:
+                import torch
+
+                # Qwen3TTSModel is a wrapper without .to(). Placement must happen
+                # while loading its underlying Transformers model.
+                dtype_name = self.options.get("dtype", "float16" if self.device == "cuda" else "float32")
+                dtypes = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
+                if dtype_name not in dtypes:
+                    raise ValueError("Qwen dtype must be float16, bfloat16, or float32")
+                load_options = {
+                    "device_map": "cuda:0" if self.device == "cuda" else self.device,
+                    "dtype": dtypes[dtype_name],
+                    "attn_implementation": self.options.get("attn_implementation", "sdpa"),
+                }
+            model = model_cls.from_pretrained(model_id, **load_options)
         else:
             try:
                 model = model_cls(model=model_id, device=self.device)

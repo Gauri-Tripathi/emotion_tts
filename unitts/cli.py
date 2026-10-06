@@ -12,7 +12,7 @@ import click
 import requests
 
 from unitts import UniTTS
-from unitts.core.config import init_config
+from unitts.core.config import init_config, load_env_file
 from unitts.core.registry import ProviderRegistry
 from unitts.core.schemas import OutputFormat, TTSRequest
 from unitts.utils.downloader import hf_download
@@ -33,10 +33,13 @@ def user_errors(function):
 
 @click.group()
 @click.option("--verbose", is_flag=True, help="Enable debug logging.")
-def main(verbose: bool = False) -> None:
+@click.option("--env-file", type=click.Path(exists=True, dir_okay=False, path_type=Path), help="Load credentials from a local .env file.")
+def main(verbose: bool = False, env_file: Path | None = None) -> None:
     """Universal Text-to-Speech command line tool."""
 
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+    if env_file:
+        load_env_file(env_file)
 
 
 @main.command()

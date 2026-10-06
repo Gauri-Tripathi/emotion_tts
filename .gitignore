@@ -36,6 +36,10 @@ build/
 # Local scratch script; may contain credentials.
 /try.py
 
+# Private setup guides and generated studio/audit audio.
+/local-docs/
+/outputs/
+
 # Operating-system metadata.
 .DS_Store
 Thumbs.db

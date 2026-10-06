@@ -11,6 +11,28 @@ import yaml
 CONFIG_PATH = Path.home() / ".unitts" / "config.yaml"
 
 
+def load_env_file(path: Path) -> None:
+    """Load an explicit local credential file without replacing exported values."""
+    from dotenv import load_dotenv
+
+    if not path.is_file():
+        raise ValueError(f"Environment file not found: {path}")
+    load_dotenv(path, override=False)
+    aliases = {
+        "UNITTS_OPENAI_API_KEY": ("OPENAI_API_KEY",),
+        "UNITTS_ELEVENLABS_API_KEY": ("ELEVENLABS_API_KEY", "ELEVEN_LAB_KEY"),
+        "UNITTS_FISH_API_KEY": ("FISH_API_KEY",),
+        "UNITTS_SMALLEST_API_KEY": ("SMALLEST_API_KEY",),
+        "UNITTS_AZURE_API_KEY": ("AZURE_SPEECH_KEY",),
+        "UNITTS_AZURE_REGION": ("AZURE_SPEECH_REGION",),
+    }
+    for target, sources in aliases.items():
+        for source in sources:
+            if os.environ.get(source):
+                os.environ.setdefault(target, os.environ[source])
+                break
+
+
 def load_config(config_path: Path | None = None) -> dict[str, Any]:
     """Load YAML config with environment variable interpolation."""
 

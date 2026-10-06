@@ -1,98 +1,387 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>UniTTS Studio</title>
-  <link rel="stylesheet" href="app.css">
-</head>
-<body>
-  <main class="app-shell">
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">Local synthesis workspace</p>
-        <h1>UniTTS Studio</h1>
-      </div>
-      <div class="server-state" id="server-state">Connecting</div>
-    </header>
-
-    <section class="workspace" aria-label="Text to speech workspace">
-      <aside class="settings-panel">
-        <label class="field">
-          <span>Provider</span>
-          <select id="provider" aria-label="Provider"></select>
-        </label>
-        <div class="provider-meta" id="provider-meta"></div>
-
-        <div class="field-group">
-          <label class="field">
-            <span>Language</span>
-            <input id="language" value="en" autocomplete="off">
-          </label>
-          <label class="field">
-            <span>Voice</span>
-            <input id="voice" placeholder="Provider default" autocomplete="off">
-          </label>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>UniTTS · Speech studio</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#text">Skip to editor</a>
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="UniTTS home"
+        ><span class="brand-mark" aria-hidden="true">uı</span>UniTTS<span
+          class="brand-dot"
+          >®</span
+        ></a
+      >
+      <p class="nav-caption">YOUR WORKSPACE</p>
+      <nav aria-label="Workspace">
+        <a class="nav-item active" href="#studio"
+          ><span>◉</span> Speech studio <span class="nav-arrow">↗</span></a
+        ><a class="nav-item" href="#library"
+          ><span>▤</span> Session library
+          <span id="library-count" class="count">0</span></a
+        ><button class="nav-item" id="help-open" type="button">
+          <span>?</span> Quick guide
+        </button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="local-card">
+          <span class="status-dot"></span><strong>Your local workspace</strong>
+          <p>
+            Local models run on this machine. Hosted providers use their APIs.
+          </p>
         </div>
-
-        <label class="field">
-          <span>Speed <output id="speed-value">1.0x</output></span>
-          <input id="speed" type="range" min="0.7" max="1.3" value="1" step="0.05">
-        </label>
-
-        <div class="divider"></div>
-
-        <label class="field">
-          <span>Reference audio</span>
-          <input id="reference-audio" type="file" accept="audio/*">
-        </label>
-        <label class="field">
-          <span>Reference transcript</span>
-          <textarea id="reference-text" rows="3" placeholder="Needed by cloning providers"></textarea>
-        </label>
-
-        <details class="advanced">
-          <summary>Advanced</summary>
-          <label class="field">
-            <span>Model override</span>
-            <input id="model" placeholder="Provider default" autocomplete="off">
-          </label>
-          <label class="field">
-            <span>Device</span>
-            <select id="device">
-              <option value="auto">Auto</option>
-              <option value="cuda">CUDA</option>
-              <option value="cpu">CPU</option>
-            </select>
-          </label>
-        </details>
-      </aside>
-
-      <section class="composer">
-        <div class="composer-heading">
-          <label for="text">Text</label>
-          <span id="char-count">0 characters</span>
+        <div class="sidebar-footer">
+          <span class="avatar">U</span>
+          <div>
+            <strong>UniTTS Studio</strong
+            ><small>One interface. Many voices.</small>
+          </div>
         </div>
-        <textarea id="text" class="text-editor" placeholder="Write something to synthesize..."></textarea>
-        <div class="composer-footer">
-          <p id="request-note">Choose a provider to view its supported features.</p>
-          <button id="synthesize" class="primary-action" type="button" disabled>Synthesize</button>
+      </div>
+    </aside>
+    <main id="studio" class="main">
+      <header class="topbar">
+        <span
+          >Workspace <span class="breadcrumb-divider">/</span>
+          <strong>Speech studio</strong></span
+        >
+        <div id="server-state" class="server-state" role="status">
+          <span class="status-dot"></span
+          ><span id="server-label">Connecting</span>
         </div>
-      </section>
-    </section>
-
-    <section class="result-panel" aria-live="polite">
-      <div class="result-copy">
-        <p class="eyebrow">Output</p>
-        <h2 id="result-title">No audio generated</h2>
-        <p id="result-message">Your finished audio will appear here.</p>
+      </header>
+      <div class="page-content">
+        <section class="intro">
+          <div>
+            <p class="eyebrow">MAKE YOUR WORDS HEARD</p>
+            <h1>Good words. <em>Great voices.</em></h1>
+            <p class="intro-copy">
+              From a first draft to the final take. Create speech your way.
+            </p>
+          </div>
+          <span class="intro-stamp" aria-hidden="true">TEXT ↗ VOICE</span>
+        </section>
+        <div class="workspace">
+          <section class="composer card" aria-labelledby="editor-heading">
+            <div class="card-heading">
+              <div class="heading-with-icon">
+                <span class="section-icon" aria-hidden="true">≋</span>
+                <h2 id="editor-heading">Your script</h2>
+              </div>
+              <div class="editor-actions">
+                <button id="import-text" class="text-button" type="button">
+                  ↑ Import text</button
+                ><input
+                  id="text-file"
+                  type="file"
+                  accept=".txt,text/plain"
+                  hidden
+                /><button
+                  id="clear-text"
+                  class="icon-button"
+                  type="button"
+                  aria-label="Clear script"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            <div class="editor-wrap">
+              <label class="sr-only" for="text">Text to turn into speech</label
+              ><textarea
+                id="text"
+                class="text-editor"
+                placeholder="Every great voice starts with a few words. Write yours here…"
+                spellcheck="true"
+              ></textarea>
+            </div>
+            <div class="script-meta">
+              <span
+                ><span id="char-count">0 characters</span
+                ><span class="meta-divider">·</span
+                ><span id="word-count">0 words</span></span
+              ><span class="shortcut">Ctrl / ⌘ + Enter to generate</span>
+            </div>
+            <div class="example-bar">
+              <span>Need a starting point?</span
+              ><button data-example="welcome" type="button">
+                A warm welcome ↗</button
+              ><button data-example="story" type="button">
+                A little storytelling ↗
+              </button>
+            </div>
+            <div class="generation-footer">
+              <div>
+                <span class="mini-label">READY WHEN YOU ARE</span>
+                <p id="request-note">
+                  Select a voice, write your script, and make it speak.
+                </p>
+              </div>
+              <button
+                id="synthesize"
+                class="primary-action"
+                type="button"
+                disabled
+              >
+                <span id="generate-label">Generate speech</span
+                ><span aria-hidden="true">↗</span>
+              </button>
+            </div>
+          </section>
+          <aside class="settings card" aria-labelledby="settings-heading">
+            <div class="card-heading">
+              <div class="heading-with-icon">
+                <span class="section-icon" aria-hidden="true">☷</span>
+                <h2 id="settings-heading">Voice & settings</h2>
+              </div>
+            </div>
+            <div class="settings-body">
+              <label class="field"
+                ><span>Provider</span
+                ><select id="provider" aria-label="Provider"></select
+              ></label>
+              <div id="provider-meta" class="provider-meta"></div>
+              <div id="provider-notice" class="provider-notice" hidden></div>
+              <label class="field"
+                ><span
+                  >Voice
+                  <button
+                    id="load-voices"
+                    class="text-button small"
+                    type="button"
+                  >
+                    Browse voices ↗
+                  </button></span
+                ><input
+                  id="voice"
+                  list="voice-list"
+                  placeholder="Provider default"
+                  autocomplete="off" /><datalist id="voice-list"></datalist
+              ></label>
+              <p id="voice-note" class="field-note">
+                Use the provider default or enter a voice ID.
+              </p>
+              <div class="field-grid">
+                <label class="field"
+                  ><span>Language</span
+                  ><input
+                    id="language"
+                    value="en"
+                    autocomplete="off"
+                    placeholder="en" /></label
+                ><label class="field"
+                  ><span>Audio format</span
+                  ><select id="format"></select
+                ></label>
+              </div>
+              <label class="field speed-field"
+                ><span
+                  >Speaking speed
+                  <output id="speed-value" for="speed">1.00×</output></span
+                ><input
+                  id="speed"
+                  type="range"
+                  min="0.7"
+                  max="1.3"
+                  value="1"
+                  step="0.05"
+                /><span class="range-labels"
+                  ><span>Slower</span><span>Natural</span
+                  ><span>Faster</span></span
+                ></label
+              >
+              <details class="advanced">
+                <summary>
+                  Advanced settings <span aria-hidden="true">+</span>
+                </summary>
+                <div class="advanced-body">
+                  <label class="field"
+                    ><span>Device</span
+                    ><select id="device">
+                      <option value="auto">Auto · recommended</option>
+                      <option value="cpu">CPU</option>
+                      <option value="cuda">CUDA GPU</option>
+                      <option value="mps">Apple MPS</option>
+                    </select></label
+                  ><label class="field"
+                    ><span>Model override</span
+                    ><input
+                      id="model"
+                      placeholder="Provider default"
+                      autocomplete="off"
+                  /></label>
+                  <p class="field-note">
+                    Use a model supported by the selected provider.
+                  </p>
+                </div>
+              </details>
+              <details id="reference-section" class="advanced">
+                <summary>
+                  Reference voice <span aria-hidden="true">+</span>
+                </summary>
+                <div class="advanced-body">
+                  <p class="field-note">
+                    For providers that support reference audio.
+                  </p>
+                  <label class="field"
+                    ><span>Audio file</span
+                    ><input
+                      id="reference-audio"
+                      type="file"
+                      accept="audio/*" /></label
+                  ><label class="field"
+                    ><span>Reference transcript</span
+                    ><textarea
+                      id="reference-text"
+                      rows="3"
+                      placeholder="What is said in the recording?"
+                    ></textarea>
+                  </label>
+                </div>
+              </details>
+            </div>
+            <div class="settings-foot">
+              <span class="status-dot"></span
+              ><span>Models stay loaded between takes</span>
+            </div>
+          </aside>
+        </div>
+        <section
+          id="result-panel"
+          class="result-card card"
+          aria-labelledby="result-title"
+          aria-busy="false"
+        >
+          <div class="result-top">
+            <div>
+              <p class="eyebrow">THE PLAYBACK ROOM</p>
+              <h2 id="result-title">Your next take starts here.</h2>
+            </div>
+            <span id="result-badge" class="badge">No audio yet</span>
+          </div>
+          <div id="empty-output" class="empty-output">
+            <div class="empty-wave" aria-hidden="true">
+              <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+              ><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+              ><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+          </div>
+          <div id="playback" class="playback" hidden>
+            <button
+              id="play-toggle"
+              class="play-toggle"
+              type="button"
+              aria-label="Play audio"
+            >
+              ▶
+            </button>
+            <div class="wave-area">
+              <canvas id="waveform" aria-hidden="true"></canvas
+              ><label class="sr-only" for="seek">Audio position</label
+              ><input
+                id="seek"
+                type="range"
+                min="0"
+                max="100"
+                step="0.1"
+                value="0"
+              />
+              <div class="audio-time">
+                <span id="elapsed">0:00</span><span id="duration">0:00</span>
+              </div>
+            </div>
+            <a id="download" class="download-action" download hidden
+              >↓ Download</a
+            ><audio id="audio" preload="metadata"></audio>
+          </div>
+          <div class="result-bottom">
+            <p id="result-message" role="status">
+              Generate your first take to listen, fine-tune, and download.
+            </p>
+            <span id="result-stats"></span>
+          </div>
+          <ul id="warnings" class="warnings" hidden></ul>
+        </section>
+        <section
+          id="library"
+          class="library-section"
+          aria-labelledby="library-heading"
+        >
+          <div class="library-heading">
+            <div>
+              <h2 id="library-heading">
+                Your session library <span class="subtle">/</span>
+                <span id="take-count">0 takes</span>
+              </h2>
+              <p>Compare your takes. Find the voice that fits.</p>
+            </div>
+            <button
+              id="clear-library"
+              class="text-button"
+              type="button"
+              disabled
+            >
+              Clear library
+            </button>
+          </div>
+          <div id="library-empty" class="library-empty">
+            <span aria-hidden="true">▤</span
+            ><span
+              >Finished takes will appear here. Download them to keep them after
+              a refresh.</span
+            >
+          </div>
+          <div id="take-list" class="take-list"></div>
+        </section>
+        <footer class="page-footer">
+          <span>UniTTS · Built for every voice.</span
+          ><span>CPU, GPU & hosted APIs</span>
+        </footer>
       </div>
-      <div class="audio-controls">
-        <audio id="audio" controls></audio>
-        <a id="download" class="download-action" download="unitts-output.wav" hidden>Download WAV</a>
+    </main>
+    <dialog id="help-dialog">
+      <div class="dialog-heading">
+        <h2>A quick start</h2>
+        <button
+          id="help-close"
+          class="icon-button"
+          type="button"
+          aria-label="Close quick guide"
+        >
+          ×
+        </button>
       </div>
-    </section>
-  </main>
-  <script src="app.js"></script>
-</body>
+      <ol>
+        <li>
+          <strong>Choose a provider.</strong> Piper and eSpeak run on CPU.
+          Hosted providers need a key and available credits.
+        </li>
+        <li>
+          <strong>Write your script.</strong> Start with a short sentence.
+          Import a .txt file for longer scripts.
+        </li>
+        <li>
+          <strong>Make it yours.</strong> Pick a voice and a supported format.
+          Adjust speed where available.
+        </li>
+        <li>
+          <strong>Generate and listen.</strong> First requests can download
+          models. Compare takes in the session library.
+        </li>
+        <li>
+          <strong>Save the result.</strong> Download audio before refreshing or
+          closing the page.
+        </li>
+      </ol>
+      <p class="help-note">
+        Your full setup and command guide is in
+        <code>local-docs/USER_GUIDE.md</code> on this machine.
+      </p>
+    </dialog>
+    <script src="/app.js"></script>
+  </body>
 </html>

@@ -16,13 +16,36 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from unitts import TTSRequest, UniTTS
 from unitts.core.registry import ProviderRegistry
+from unitts.core.config import load_env_file, provider_options
+from unitts.core.schemas import OutputFormat
 
 WEB_ROOT = Path(__file__).with_name("web")
 SYNTHESIS_LOCK = threading.Lock()
 MAX_BODY_BYTES = 32 * 1024 * 1024
+
+
+def public_error(exc: Exception) -> str:
+    """Show actionable service failures without forwarding credential-bearing bodies."""
+    status = getattr(exc, "status_code", None)
+    cause_response = getattr(exc.__cause__, "response", None)
+    if cause_response is not None:
+        status = cause_response.status_code
+    messages = {
+        401: "Authentication failed. Check this provider's API key in your environment file.",
+        402: "This provider requires payment. Check your plan and available credits.",
+        403: "Access denied. Check permissions for this model and voice.",
+        404: "Model or voice not found. Check the selected voice and model.",
+        429: "Quota or rate limit reached. Check your credits and try again later.",
+    }
+    if status:
+        return messages.get(status, f"The provider returned HTTP {status}. Try again later.")
+    if isinstance(exc, (ValueError, ImportError, RuntimeError, OSError)):
+        return str(exc)
+    return "Generation failed. Check the provider setup and try again."
 
 
 class InferenceSession:
@@ -62,8 +85,16 @@ INFERENCE_SESSION = InferenceSession()
 def provider_payloads() -> list[dict[str, Any]]:
     """Return the registry metadata needed by the browser without loading models."""
     providers = []
+    seen = set()
     for name, provider_cls in sorted(ProviderRegistry.all().items()):
-        providers.append({"name": name, "capabilities": provider_cls.capabilities.model_dump(mode="json")})
+        if provider_cls in seen:
+            continue
+        seen.add(provider_cls)
+        canonical = provider_cls.name
+        options = provider_options(canonical, {})
+        configured = bool(options.get("api_key")) and (canonical != "azure" or bool(options.get("region")))
+        providers.append({"name": canonical, "configured": configured,
+                          "capabilities": provider_cls.capabilities.model_dump(mode="json")})
     return providers
 
 
@@ -91,6 +122,14 @@ def synthesize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     provider = str(payload.get("provider", "")).strip()
     if not provider:
         raise ValueError("Provider is required")
+    capabilities = ProviderRegistry.get(provider).capabilities
+    formats = capabilities.output_formats
+    output_format = payload.get("output_format") or ("wav" if "wav" in formats else formats[0])
+    if output_format not in formats:
+        raise ValueError(f"{provider} supports: {', '.join(formats)}")
+    device = payload.get("device", "auto")
+    if capabilities.requires_gpu and device == "cpu":
+        raise ValueError(f"{provider} requires a GPU. Choose a CPU provider or CUDA.")
 
     reference = _decode_reference(payload.get("reference_audio"))
     try:
@@ -98,18 +137,21 @@ def synthesize_payload(payload: dict[str, Any]) -> dict[str, Any]:
             text=text,
             language=payload.get("language") or "en",
             voice=payload.get("voice") or None,
-            speed=payload.get("speed") or 1.0,
+            speed=payload.get("speed", 1.0),
+            output_format=OutputFormat(output_format),
             reference_audio=[reference] if reference else [],
             reference_text=payload.get("reference_text") or None,
         )
         response = INFERENCE_SESSION.synthesize(
-            provider, payload.get("device", "auto"), payload.get("model") or None, request,
+            provider, device, payload.get("model") or None, request,
         )
         return {
             "audio": base64.b64encode(response.audio).decode("ascii"),
             "sample_rate": response.sample_rate,
             "warnings": response.warnings,
             "metadata": response.metadata,
+            "output_format": response.output_format.value,
+            "duration_seconds": response.duration_seconds,
         }
     finally:
         if reference:
@@ -124,6 +166,16 @@ class UniTTSRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/api/providers":
             self._send_json(HTTPStatus.OK, {"providers": provider_payloads()})
+            return
+        if urlparse(self.path).path == "/api/voices":
+            try:
+                provider = parse_qs(urlparse(self.path).query).get("provider", [""])[0]
+                # Listing voices does not load a synthesis model.
+                with UniTTS(provider=provider) as engine:
+                    voices = engine.list_voices()
+                self._send_json(HTTPStatus.OK, {"voices": voices})
+            except Exception as exc:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": public_error(exc)})
             return
         relative = "index.html" if self.path in {"/", "/index.html"} else self.path.lstrip("/")
         target = (WEB_ROOT / relative).resolve()
@@ -155,7 +207,7 @@ class UniTTSRequestHandler(BaseHTTPRequestHandler):
         try:
             self._send_json(HTTPStatus.OK, synthesize_payload(payload))
         except Exception as exc:
-            self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": public_error(exc)})
         finally:
             SYNTHESIS_LOCK.release()
 
@@ -178,7 +230,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run the local UniTTS web interface")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8765, help="Bind port (default: 8765)")
+    parser.add_argument("--env-file", type=Path, help="Load local API credentials from this file")
     args = parser.parse_args()
+    if args.env_file:
+        load_env_file(args.env_file)
     server = ThreadingHTTPServer((args.host, args.port), UniTTSRequestHandler)
     print(f"UniTTS web UI: http://{args.host}:{args.port}")
     try:
